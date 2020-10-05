@@ -227,7 +227,7 @@ def do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns):
 
     if log_file and log_pos and max_pk_values:
         LOGGER.info("Resuming initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
-        full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
+        full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch)
 
     else:
         LOGGER.info("Performing initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
@@ -256,10 +256,10 @@ def do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns):
                                           'log_pos',
                                           current_log_pos)
 
-            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch)
 
         else:
-            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
@@ -271,14 +271,14 @@ def do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns):
                                           current_log_pos)
 
 
-def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
+def do_sync_full_table(mysql_conn, catalog_entry, state, columns, batch):
     LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
 
     write_schema_message(catalog_entry)
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
-    full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
+    full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch)
 
     # Prefer initial_full_table_complete going forward
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
@@ -310,6 +310,8 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
 
         database_name = common.get_database_name(catalog_entry)
 
+        batch = config.get('fast_sync')
+
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database_name
             timer.tags['table'] = catalog_entry.table
@@ -319,9 +321,9 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
             if replication_method == 'INCREMENTAL':
                 do_sync_incremental(mysql_conn, catalog_entry, state, columns)
             elif replication_method == 'LOG_BASED':
-                do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns)
+                do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns, batch)
             elif replication_method == 'FULL_TABLE':
-                do_sync_full_table(mysql_conn, catalog_entry, state, columns)
+                do_sync_full_table(mysql_conn, catalog_entry, state, columns, batch)
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
