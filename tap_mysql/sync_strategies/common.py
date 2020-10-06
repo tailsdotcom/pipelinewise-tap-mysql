@@ -223,7 +223,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 row = cursor.fetchone()
 
         else:
-            LOGGER.debug("Writing records in batch mode.")
+            LOGGER.info("Fast Sync enable. Writing records in batch.")
             export_batch_rows = 50000
             batch_file_index = 0
 
@@ -234,6 +234,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
 
                 # Write records to json lines file
                 file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
+                LOGGER.info(f"Writing {export_batch_rows} records to file '{file_path}'")
                 with open(file_path, 'w') as f:
                     for row in rows:
                         record = row_to_singer_record(
