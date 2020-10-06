@@ -150,19 +150,14 @@ def get_new_batch_file_path(table_name, file_index, base_path=DEFAULT_FAST_SYNC_
 
 
 def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params, batch=False):
-    replication_key = singer.get_bookmark(
-        state, catalog_entry.tap_stream_id, 'replication_key'
-    )
 
     query_string = cursor.mogrify(select_sql, params)
-
     time_extracted = utils.now()
 
     LOGGER.info('Running %s', query_string)
     cursor.execute(select_sql, params)
 
     database_name = get_database_name(catalog_entry)
-
     md_map = metadata.to_map(catalog_entry.metadata)
     stream_metadata = md_map.get((), {})
     replication_method = stream_metadata.get('replication-method')
@@ -173,7 +168,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
 
         rows_saved = 0
 
-        if replication_method == 'INCREMENTAL' or not batch:
+        if not batch:
 
             row = cursor.fetchone()
             while row:
@@ -189,40 +184,46 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
 
                 singer.write_message(record_message)
 
-                if replication_method in {'FULL_TABLE', 'LOG_BASED'}:
+                # Write bookmark
+                if replication_method in ('FULL_TABLE', 'LOG_BASED'):
+
                     key_properties = get_key_properties(catalog_entry)
-
-                    max_pk_values = singer.get_bookmark(state,
-                                                        catalog_entry.tap_stream_id,
-                                                        'max_pk_values')
-
+                    max_pk_values = singer.get_bookmark(
+                        state, catalog_entry.tap_stream_id, 'max_pk_values'
+                    )
                     if max_pk_values:
-                        last_pk_fetched = {k:v for k, v in record_message.record.items()
-                                        if k in key_properties}
-
-                        state = singer.write_bookmark(state,
-                                                    catalog_entry.tap_stream_id,
-                                                    'last_pk_fetched',
-                                                    last_pk_fetched)
+                        last_pk_fetched = {
+                            k:v for k, v in record_message.record.items()
+                            if k in key_properties
+                        }
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'last_pk_fetched', last_pk_fetched
+                        )
 
                 elif replication_method == 'INCREMENTAL':
-                    if replication_key is not None:
-                        state = singer.write_bookmark(state,
-                                                    catalog_entry.tap_stream_id,
-                                                    'replication_key',
-                                                    replication_key)
 
-                        state = singer.write_bookmark(state,
-                                                    catalog_entry.tap_stream_id,
-                                                    'replication_key_value',
-                                                    record_message.record[replication_key])
+                    replication_key = singer.get_bookmark(
+                        state, catalog_entry.tap_stream_id, 'replication_key'
+                    )
+                    if replication_key is not None:
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'replication_key', replication_key
+                        )
+
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'replication_key_value', record_message.record[replication_key]
+                        )
+
                 if rows_saved % 1000 == 0:
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
                 row = cursor.fetchone()
 
         else:
-            LOGGER.debug("Running extract in batch mode.")
+            LOGGER.debug("Writing records in batch mode.")
             export_batch_rows = 50000
             batch_file_index = 0
 
@@ -258,23 +259,42 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 )
 
                 # Write bookmark
-                key_properties = get_key_properties(catalog_entry)
-                max_pk_values = singer.get_bookmark(
-                    state, catalog_entry.tap_stream_id, 'max_pk_values'
-                )
+                if replication_method in ('FULL_TABLE', 'LOG_BASED'):
 
-                if max_pk_values:
-                    last_pk_fetched = {
-                        k:v for k, v in record.record.items()
-                        if k in key_properties
-                    }
-
-                    state = singer.write_bookmark(
-                        state, catalog_entry.tap_stream_id,
-                        'last_pk_fetched', last_pk_fetched
+                    key_properties = get_key_properties(catalog_entry)
+                    max_pk_values = singer.get_bookmark(
+                        state, catalog_entry.tap_stream_id, 'max_pk_values'
                     )
 
-                    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+                    if max_pk_values:
+                        last_pk_fetched = {
+                            k:v for k, v in record.record.items()
+                            if k in key_properties
+                        }
+
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'last_pk_fetched', last_pk_fetched
+                        )
+
+                        singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+                elif replication_method == 'INCREMENTAL':
+
+                    replication_key = singer.get_bookmark(
+                        state, catalog_entry.tap_stream_id, 'replication_key'
+                    )
+
+                    if replication_key is not None:
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'replication_key', replication_key
+                        )
+
+                        state = singer.write_bookmark(
+                            state, catalog_entry.tap_stream_id,
+                            'replication_key_value', record_message.record[replication_key]
+                        )
 
                 batch_file_index += 1
                 rows = cursor.fetchmany(export_batch_rows)
