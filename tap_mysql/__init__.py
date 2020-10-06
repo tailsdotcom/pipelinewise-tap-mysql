@@ -311,7 +311,7 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
         database_name = common.get_database_name(catalog_entry)
 
         batch = config.get('fast_sync')
-        if batch in ('true', 1, 'True'):  # catch env config
+        if batch in ('true', 1, 'True', 'TRUE'):  # catch env config
             batch = True
         if batch:
             LOGGER.info("Fast Sync Enabled")
