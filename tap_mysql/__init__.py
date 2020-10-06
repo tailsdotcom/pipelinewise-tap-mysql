@@ -201,7 +201,7 @@ def do_sync_incremental(mysql_conn, catalog_entry, state, columns, batch):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns):
+def do_sync_historical_binlog(mysql_conn, catalog_entry, state, columns, batch):
     binlog.verify_binlog_config(mysql_conn)
 
     is_view = common.get_is_view(catalog_entry)
