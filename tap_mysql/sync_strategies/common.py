@@ -230,6 +230,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
             file = open(file_path, 'w')
 
+            tic = time.clock()
             rows = cursor.fetchmany(export_batch_rows)
             while rows:
                 # If we have reached our write_batch_rows limit, start a new file
@@ -237,9 +238,9 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 if rows_saved % write_batch_rows == 0:
                     # close old file
                     file.close()
-                    # and start a new one
-                    file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
-                    file = open(file_path, 'w')
+
+                    time_taken = time.clock() - tic
+                    LOGGER.info(f"{write_batch_rows} records written to file '{file_path}' in {time_taken}s")
 
                     # Create new 'batch' type record with file path
                     batch_record = {
@@ -256,8 +257,13 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                         )
                     )
 
+                    # start a new file
+                    tic = time.clock()
+                    file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
+                    file = open(file_path, 'w')
+
                 # Write records to json lines file
-                LOGGER.info(f"Writing {export_batch_rows} records to file '{file_path}'")
+
                 for row in rows:
                     record = row_to_singer_record(
                         catalog_entry, stream_version,
