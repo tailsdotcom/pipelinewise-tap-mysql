@@ -223,41 +223,48 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 row = cursor.fetchone()
 
         else:
-            LOGGER.info("Fast Sync enable. Writing records in batch.")
-            export_batch_rows = 50000
+            export_batch_rows = 500000
+            write_batch_rows = export_batch_rows * 10
+
             batch_file_index = 0
+            file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
+            file = open(file_path, 'w')
 
             rows = cursor.fetchmany(export_batch_rows)
             while rows:
-                counter.increment(amount=len(rows))
-                rows_saved += len(rows)
+                # If we have reached our write_batch_rows limit, start a new file
+                # and emit the BATCH RECORD singer message
+                if rows_saved % write_batch_rows == 0:
+                    # close old file
+                    file.close()
+                    # and start a new one
+                    file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
+                    file = open(file_path, 'w')
+
+                    # Create new 'batch' type record with file path
+                    batch_record = {
+                        '__fast_sync_message__': True,
+                        'file_path': file_path
+                    }
+                    # Write batch record
+                    singer.write_message(
+                        singer.RecordMessage(
+                            stream=catalog_entry.stream,
+                            record=batch_record,
+                            version=stream_version,
+                            time_extracted=time_extracted
+                        )
+                    )
 
                 # Write records to json lines file
-                file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
                 LOGGER.info(f"Writing {export_batch_rows} records to file '{file_path}'")
-                with open(file_path, 'w') as f:
-                    for row in rows:
-                        record = row_to_singer_record(
-                            catalog_entry, stream_version,
-                            row, columns, time_extracted
-                        )
-                        f.write(json.dumps(record.record))
-                        f.write('\n')
-
-                # Create new 'batch' type record with file path
-                batch_record = {
-                    '__fast_sync_message__': True,
-                    'file_path': file_path
-                }
-                # Write batch record
-                singer.write_message(
-                    singer.RecordMessage(
-                        stream=catalog_entry.stream,
-                        record=batch_record,
-                        version=stream_version,
-                        time_extracted=time_extracted
+                for row in rows:
+                    record = row_to_singer_record(
+                        catalog_entry, stream_version,
+                        row, columns, time_extracted
                     )
-                )
+                    file.write(json.dumps(record.record))
+                    file.write('\n')
 
                 # Write bookmark
                 if replication_method in ('FULL_TABLE', 'LOG_BASED'):
@@ -298,6 +305,9 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                         )
 
                 batch_file_index += 1
+                counter.increment(amount=len(rows))
+                rows_saved += len(rows)
+
                 rows = cursor.fetchmany(export_batch_rows)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))

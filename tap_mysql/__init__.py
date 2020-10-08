@@ -315,8 +315,6 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
             batch = True
         if batch:
             LOGGER.info("Fast Sync Enabled")
-        else:
-            LOGGER.info(f"Fast Sync Disabled. Config value: '{batch}'")
 
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database_name
