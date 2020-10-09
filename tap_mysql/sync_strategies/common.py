@@ -231,12 +231,14 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             export_batch_rows = 500000
             write_batch_rows = export_batch_rows * 10
             batch_rows_saved = 0
-
             batch_file_index = 0
+
+            # Open first file
+            tic = time.clock()
             file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
             file = open(file_path, 'w')
+            batch_file_index += 1
 
-            tic = time.clock()
             rows = cursor.fetchmany(export_batch_rows)
             while rows:
                 # Write records to json lines file
@@ -247,10 +249,10 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     )
                     file.write(json.dumps(record.record))
                     file.write('\n')
-
-                counter.increment(amount=len(rows))
-                rows_saved += len(rows)
-                batch_rows_saved += len(rows)
+                    # Increment counters
+                    counter.increment()
+                    rows_saved += 1
+                    batch_rows_saved += 1
 
                 # If we have reached our write_batch_rows limit,
                 # start a new file emit the BATCH RECORD singer message
@@ -279,20 +281,21 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     tic = time.clock()
                     file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
                     file = open(file_path, 'w')
+                    batch_file_index += 1
                     # Update bookmark
                     state = update_bookmark(replication_method, catalog_entry, state)
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
                     # Reset batch row counter
-                    batch_file_index += 1
                     batch_rows_saved = 0
 
                 rows = cursor.fetchmany(export_batch_rows)
 
-            # Close file and publish last message
-            if batch_rows_saved % write_batch_rows != 0:  # make sure we don't emit a duplicate message
-                # close file
+            # close last file if not already
+            if not file.closed:
                 file.close()
 
+            # Publish last message, if not already
+            if batch_rows_saved % write_batch_rows != 0:
                 time_taken = time.clock() - tic
                 LOGGER.info(f"{batch_rows_saved} records written to file '{file_path}' in {time_taken}s")
                 # Create new 'batch' type record with file path
