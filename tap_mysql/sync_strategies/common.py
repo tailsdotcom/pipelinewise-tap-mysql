@@ -149,7 +149,7 @@ def get_new_batch_file_path(table_name, file_index, base_path=DEFAULT_FAST_SYNC_
     return os.path.join(base_path, file_name)
 
 
-def update_bookmark(replication_method, catalog_entry, state):
+def update_bookmark(record_message, replication_method, catalog_entry, state):
     if replication_method in ('FULL_TABLE', 'LOG_BASED'):
 
         key_properties = get_key_properties(catalog_entry)
@@ -202,7 +202,6 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
         counter.tags['table'] = catalog_entry.table
 
         rows_saved = 0
-
         if not batch:
 
             row = cursor.fetchone()
@@ -220,7 +219,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 singer.write_message(record_message)
 
                 # Update bookmark
-                state = update_bookmark(replication_method, catalog_entry, state)
+                state = update_bookmark(record_message, replication_method, catalog_entry, state)
 
                 if rows_saved % 1000 == 0:
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
@@ -228,6 +227,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 row = cursor.fetchone()
 
         else:
+            record_message = None
             export_batch_rows = 500000
             write_batch_rows = export_batch_rows * 10
             batch_rows_saved = 0
@@ -243,11 +243,11 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             while rows:
                 # Write records to json lines file
                 for row in rows:
-                    record = row_to_singer_record(
+                    record_message = row_to_singer_record(
                         catalog_entry, stream_version,
                         row, columns, time_extracted
                     )
-                    file.write(json.dumps(record.record))
+                    file.write(json.dumps(record_message.record))
                     file.write('\n')
                     # Increment counters
                     counter.increment()
@@ -283,7 +283,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     file = open(file_path, 'w')
                     batch_file_index += 1
                     # Update bookmark
-                    state = update_bookmark(replication_method, catalog_entry, state)
+                    state = update_bookmark(record_message, replication_method, catalog_entry, state)
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
                     # Reset batch row counter
                     batch_rows_saved = 0
@@ -314,6 +314,6 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     )
                 )
                 # final state
-                state = update_bookmark(replication_method, catalog_entry, state)
+                state = update_bookmark(record_message, replication_method, catalog_entry, state)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
