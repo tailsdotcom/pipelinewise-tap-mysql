@@ -253,6 +253,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     counter.increment()
                     rows_saved += 1
                     batch_rows_saved += 1
+                    state = update_bookmark(record_message, replication_method, catalog_entry, state)
 
                 # If we have reached our write_batch_rows limit,
                 # start a new file emit the BATCH RECORD singer message
@@ -282,11 +283,10 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     file_path = get_new_batch_file_path(catalog_entry.table, batch_file_index)
                     file = open(file_path, 'w')
                     batch_file_index += 1
-                    # Update bookmark
-                    state = update_bookmark(record_message, replication_method, catalog_entry, state)
-                    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
                     # Reset batch row counter
                     batch_rows_saved = 0
+                    # write bookmark
+                    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
                 rows = cursor.fetchmany(export_batch_rows)
 
@@ -313,7 +313,5 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                         time_extracted=time_extracted
                     )
                 )
-                # final state
-                state = update_bookmark(record_message, replication_method, catalog_entry, state)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
