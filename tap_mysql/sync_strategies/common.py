@@ -8,6 +8,10 @@ import time
 import json
 import uuid
 
+# For debugging
+import tracemalloc
+tracemalloc.start()
+
 from pathlib import Path
 from singer import metadata, utils, metrics
 
@@ -287,6 +291,14 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     batch_rows_saved = 0
                     # write bookmark
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+                # Debugging
+                snapshot = tracemalloc.take_snapshot()
+                top_stats = snapshot.statistics('lineno')
+
+                LOGGER.info("[ Top 10 ]")
+                for stat in top_stats[:10]:
+                    LOGGER.info(stat)
 
                 rows = cursor.fetchmany(export_batch_rows)
 
