@@ -268,7 +268,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     batch_record = {
                         '__fast_sync_message__': True,
                         'file_path': file_path,
-                        'hint_batch_size': batch_rows_saved,
+                        'hint_batch_size': write_batch_rows,
                         'hint_last_batch': ~full_batch
                     }
                     # Write batch record
