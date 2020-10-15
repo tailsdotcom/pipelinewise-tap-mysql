@@ -244,6 +244,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             batch_file_index += 1
 
             rows = cursor.fetchmany(export_batch_rows)
+            full_batch = (len(rows) == export_batch_rows)
             while rows:
                 # Write records to json lines file
                 for row in rows:
@@ -271,7 +272,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     batch_record = {
                         '__fast_sync_message__': True,
                         'file_path': file_path,
-                        'batch_size': batch_rows_saved
+                        'hint_batch_size': batch_rows_saved,
+                        'hint_last_batch': ~full_batch
                     }
                     # Write batch record
                     singer.write_message(
@@ -301,6 +303,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     LOGGER.info(stat)
 
                 rows = cursor.fetchmany(export_batch_rows)
+                full_batch = (len(rows) == export_batch_rows)
 
             # close last file if not already
             if not file.closed:
@@ -314,7 +317,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                 batch_record = {
                     '__fast_sync_message__': True,
                     'file_path': file_path,
-                    'batch_size': batch_rows_saved
+                    'hint_batch_size': batch_rows_saved,
+                    'hint_last_batch': True
                 }
                 # Write batch record
                 singer.write_message(
