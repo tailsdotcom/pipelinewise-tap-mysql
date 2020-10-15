@@ -229,7 +229,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
         else:
             record_message = None
             export_batch_rows = 500000
-            write_batch_rows = export_batch_rows * 10
+            write_batch_rows = export_batch_rows * 5
             batch_rows_saved = 0
             batch_file_index = 0
 
