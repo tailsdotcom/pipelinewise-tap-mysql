@@ -232,8 +232,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
 
         else:
             record_message = None
-            export_batch_rows = 500000
-            write_batch_rows = export_batch_rows * 5
+            export_batch_rows = 500000 # Rows to read from cursor
+            write_batch_rows = export_batch_rows # rows to write to file
             batch_rows_saved = 0
             batch_file_index = 0
 
@@ -252,7 +252,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                         catalog_entry, stream_version,
                         row, columns, time_extracted
                     )
-                    file.write(json.dumps(record_message.record))
+                    file.write(json.dumps(record_message.asdict()))
                     file.write('\n')
                     # Increment counters
                     counter.increment()
@@ -268,20 +268,12 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     file.close()
                     time_taken = time.clock() - tic
                     LOGGER.info(f"{batch_rows_saved} records written to file '{file_path}' in {time_taken}s")
-                    # Create new 'batch' type record with file path
-                    batch_record = {
-                        '__fast_sync_message__': True,
-                        'file_path': file_path,
-                        'hint_batch_size': write_batch_rows,
-                        'hint_last_batch': ~full_batch
-                    }
                     # Write batch record
                     singer.write_message(
-                        singer.RecordMessage(
+                        singer.BatchMessage(
                             stream=catalog_entry.stream,
-                            record=batch_record,
-                            version=stream_version,
-                            time_extracted=time_extracted
+                            filepath=file_path,
+                            batch_size=write_batch_rows
                         )
                     )
                     # start a new file
@@ -305,20 +297,12 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             if batch_rows_saved % write_batch_rows != 0:
                 time_taken = time.clock() - tic
                 LOGGER.info(f"{batch_rows_saved} records written to file '{file_path}' in {time_taken}s")
-                # Create new 'batch' type record with file path
-                batch_record = {
-                    '__fast_sync_message__': True,
-                    'file_path': file_path,
-                    'hint_batch_size': batch_rows_saved,
-                    'hint_last_batch': True
-                }
                 # Write batch record
                 singer.write_message(
-                    singer.RecordMessage(
+                    singer.BatchMessage(
                         stream=catalog_entry.stream,
-                        record=batch_record,
-                        version=stream_version,
-                        time_extracted=time_extracted
+                        filepath=file_path,
+                        batch_size=batch_rows_saved
                     )
                 )
 
