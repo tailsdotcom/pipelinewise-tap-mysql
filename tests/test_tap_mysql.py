@@ -56,7 +56,15 @@ class TestTypeMapping(unittest.TestCase):
                 c_bit BIT(4),
                 c_date DATE,
                 c_time TIME,
-                c_year YEAR
+                c_year YEAR,
+                c_geometry GEOMETRY,
+                c_point POINT,
+                c_linestring LINESTRING,
+                c_polygon POLYGON,
+                c_multipoint MULTIPOINT,
+                c_multilinestring MULTILINESTRING,
+                c_multipolygon MULTIPOLYGON,
+                c_geometrycollection GEOMETRYCOLLECTION
                 )''')
 
         catalog = test_utils.discover_catalog(conn, {})
@@ -223,6 +231,78 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(
             self.schema.properties['c_pk'].inclusion,
             'automatic')
+
+    def test_geometry(self):
+        self.assertEqual(self.schema.properties['c_geometry'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_geometry'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'geometry'})
+
+    def test_point(self):
+        self.assertEqual(self.schema.properties['c_point'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_point'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'point'})
+
+    def test_linestring(self):
+        self.assertEqual(self.schema.properties['c_linestring'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_linestring'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'linestring'})
+
+    def test_polygon(self):
+        self.assertEqual(self.schema.properties['c_polygon'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_polygon'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'polygon'})
+
+    def test_multipoint(self):
+        self.assertEqual(self.schema.properties['c_multipoint'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_multipoint'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'multipoint'})
+
+    def test_multilinestring(self):
+        self.assertEqual(self.schema.properties['c_multilinestring'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_multilinestring'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'multilinestring'})
+
+    def test_multipolygon(self):
+        self.assertEqual(self.schema.properties['c_multipolygon'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_multipolygon'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'multipolygon'})
+
+    def test_geometrycollection(self):
+        self.assertEqual(self.schema.properties['c_geometrycollection'],
+                         Schema(['null', 'object'],
+                                format='spatial',
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_geometrycollection'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'geometrycollection'})
 
 
 class TestSelectsAppropriateColumns(unittest.TestCase):
@@ -481,7 +561,7 @@ class TestIncrementalReplication(unittest.TestCase):
                      'selected': True,
                      'table-key-properties': [],
                      'database-name': 'tap_mysql_test'
-                 }},
+                }},
                 {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
             ]
 
@@ -634,7 +714,7 @@ class TestBinlogReplication(unittest.TestCase):
                      'selected': True,
                      'database-name': 'tap_mysql_test',
                      'table-key-propertes': ['id']
-                 }},
+                }},
                 {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
                 {'breadcrumb': ('properties', 'updated'), 'metadata': {'selected': True}}
             ]
@@ -845,8 +925,8 @@ class TestBinlogReplication(unittest.TestCase):
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
-                          singer.StateMessage, # end of 1st sync
-                          singer.StateMessage, # start of 2nd sync
+                          singer.StateMessage,  # end of 1st sync
+                          singer.StateMessage,  # start of 2nd sync
                           singer.SchemaMessage,
                           singer.SchemaMessage,
                           singer.SchemaMessage,
@@ -956,7 +1036,7 @@ class TestEscaping(unittest.TestCase):
                  'selected': True,
                  'table-key-properties': [],
                  'database-name': 'tap_mysql_test'
-             }},
+            }},
             {'breadcrumb': ('properties', 'b c'), 'metadata': {'selected': True}}
         ]
 
@@ -1039,7 +1119,7 @@ class TestSupportedPK(unittest.TestCase):
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-        #inital sync
+        # inital sync
         tap_mysql.do_sync(self.conn, {}, self.catalog, {})
 
         # get schema message to test that it has all the table's columns
@@ -1098,6 +1178,7 @@ class MySQLConnectionMock(MySQLConnection):
     """
     Mocked MySQLConnection class
     """
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -1164,6 +1245,46 @@ class TestSessionSqls(unittest.TestCase):
         # Test if session variables applied on connection
         self.assertEqual(self.executed_queries, ['SET SESSION max_statement_time=0',
                                                  'SET SESSION wait_timeout=28800'])
+
+
+class TestBitBooleanMapping(unittest.TestCase):
+
+    def setUp(self):
+        self.conn = test_utils.get_test_connection()
+
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute("CREATE TABLE bit_booleans_table(`id` int, `c_bit` BIT(4))")
+                cursor.execute("INSERT INTO bit_booleans_table(`id`,`c_bit`) VALUES "
+                    "(1, b'0000'),"
+                    "(2, NULL),"
+                    "(3, b'0010')")
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
+
+    def test_sync_messages_are_correct(self):
+
+        self.catalog.streams[0] = test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
+        self.catalog.streams[0] = test_utils.set_selected(self.catalog.streams[0], True)
+
+        global SINGER_MESSAGES
+        SINGER_MESSAGES.clear()
+
+        tap_mysql.do_sync(self.conn, {}, self.catalog, {})
+
+        record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
+
+        self.assertEqual(len(record_messages), 3)
+        self.assertListEqual([
+            {'id': 1, 'c_bit': False},
+            {'id': 2, 'c_bit': None},
+            {'id': 3, 'c_bit': True},
+        ], [rec.record for rec in record_messages])
+
+    def tearDown(self) -> None:
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('DROP TABLE bit_booleans_table;')
 
 
 if __name__ == "__main__":
