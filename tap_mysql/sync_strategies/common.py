@@ -188,7 +188,7 @@ def update_bookmark(record_message, replication_method, catalog_entry, state):
     return state
 
 
-def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params, batch=False):
+def sync_query(config, cursor, catalog_entry, state, select_sql, columns, stream_version, params):
 
     query_string = cursor.mogrify(select_sql, params)
     time_extracted = utils.now()
@@ -200,6 +200,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
     md_map = metadata.to_map(catalog_entry.metadata)
     stream_metadata = md_map.get((), {})
     replication_method = stream_metadata.get('replication-method')
+    batch = config.get('batch_messages', False)
 
     with metrics.record_counter(None) as counter:
         counter.tags['database'] = database_name
@@ -232,8 +233,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
 
         else:
             record_message = None
-            export_batch_rows = 500000 # Rows to read from cursor
-            write_batch_rows = export_batch_rows # rows to write to file
+            batch_cursor_size = config.get('batch_cursor_size', 500000)  # Rows to read from cursor
+            write_batch_rows = config.get('batch_size', batch_cursor_size * 2)  # rows to write to file
             batch_rows_saved = 0
             batch_file_index = 0
 
@@ -243,8 +244,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             file = open(file_path, 'w')
             batch_file_index += 1
 
-            rows = cursor.fetchmany(export_batch_rows)
-            full_batch = (len(rows) == export_batch_rows)
+            rows = cursor.fetchmany(batch_cursor_size)
+            full_batch = (len(rows) == batch_cursor_size)
             while rows:
                 # Write records to json lines file
                 for row in rows:
@@ -286,8 +287,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                     # write bookmark
                     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-                rows = cursor.fetchmany(export_batch_rows)
-                full_batch = (len(rows) == export_batch_rows)
+                rows = cursor.fetchmany(batch_cursor_size)
+                full_batch = (len(rows) == batch_cursor_size)
 
             # close last file if not already
             if not file.closed:

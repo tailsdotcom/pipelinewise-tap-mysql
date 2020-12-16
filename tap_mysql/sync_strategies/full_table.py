@@ -117,7 +117,7 @@ def generate_pk_clause(catalog_entry, state):
     return sql
 
 
-def sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch):
+def sync_table(config, mysql_conn, catalog_entry, state, columns, stream_version):
     common.whitelist_bookmark_keys(generate_bookmark_keys(catalog_entry), catalog_entry.tap_stream_id, state)
 
     bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
@@ -167,14 +167,10 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version, batch)
 
             params = {}
 
-            common.sync_query(cur,
-                              catalog_entry,
-                              state,
-                              select_sql,
-                              columns,
-                              stream_version,
-                              params,
-                              batch)
+            common.sync_query(
+                config, cur, catalog_entry, state, select_sql,
+                columns, stream_version, params
+            )
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
